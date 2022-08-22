@@ -3,6 +3,7 @@ import numpy as np
 from binance.websocket.um_futures.websocket_client import UMFuturesWebsocketClient
 import os, certifi, win32api
 from talipp.indicators import SMA
+from bots.bot import Bot, BotState
 
 # CONSTANTS
 KLINE_OPEN = 'open'
@@ -22,6 +23,7 @@ INDICATOR_SMA7 = 'sma7'
 symbols = ['btcusdt']
 intervals = [INTERVAL_1MINUTE, INTERVAL_1DAY]
 window_size = 50
+enrolled_bots = []
 
 """
 market_data {
@@ -46,17 +48,15 @@ def kline_handler(msg):
     i = kline['i']
     t = str(kline['t'])  # int to str
 
-    if t == market_data[s][i][KLINE_TIME][-1]:
+    if t == market_data[s][i][KLINE_TIME][-1]:  # update last value
         for key in market_data[s][i]:
             if key != KLINE_TIME:
                 market_data[s][i][key][-1] = float(kline[key[0]])
 
+        # SMA7
         if i == INTERVAL_1DAY:
             market_data[s][INDICATOR_SMA7].update_input_value(float(kline[KLINE_CLOSE[0]]))
-    else:
-        print(s + ' ' + i + ' ' + t + ' ' + market_data[s][i][KLINE_TIME][-1])
-        print(market_data[s][i])
-
+    else:  # add new vlaue & purge oldest
         for key in market_data[s][i]:
             market_data[s][i][key] = np.delete(market_data[s][i][key], 0)
             if key != KLINE_TIME:
@@ -64,13 +64,17 @@ def kline_handler(msg):
             else:
                 market_data[s][i][key] = np.append(market_data[s][i][key], t)
 
-        print(market_data[s][i])
-
+        # SMA7
         if i == INTERVAL_1DAY:
             market_data[s][INDICATOR_SMA7].purge_oldest(1)
             market_data[s][INDICATOR_SMA7].add_input_value(float(kline['c']))
 
-    print(market_data[s][INDICATOR_SMA7][-1])
+    # print(market_data[s][INDICATOR_SMA7][-1])
+
+    # 등록된 bot들에게 market_data가 업데이트 되었음을 알림
+    for bot in enrolled_bots:
+        if bot.state == BotState.RUN:
+            bot.update(market_data)
 
 
 def init():
@@ -104,3 +108,18 @@ def init():
 def close():
     win32api.SetConsoleCtrlHandler(lambda _: ws_client.stop(), True)
     # ws_client.stop()
+
+
+def register_bot(bot: Bot):
+    # check whether the bot is already enrolled.
+    for b in enrolled_bots:
+        if b is bot:
+            return
+
+    enrolled_bots.append(bot)
+
+
+def remove_bot(bot: Bot):
+    for i in range(len(enrolled_bots)):
+        if enrolled_bots[i] is bot:
+            enrolled_bots.pop(i)
