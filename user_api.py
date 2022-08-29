@@ -1,26 +1,37 @@
 from fastapi import FastAPI
 from fastapi.websockets import WebSocket
+
+import market
 from bots.test_bot import TestBot
 from fastapi.testclient import TestClient
-from time import  sleep
+from time import sleep
 
 app = FastAPI()
 
 
 @app.get("/")
 def read_root():
-    test_websocket()
+    # test_websocket()
     return {"Hello": "World"}
+
+
+@app.get("/create/")
+async def create_bot(amount: int = 100):
+    bot = TestBot('btcusdt', amount)
+    bot.run()
+    print("bot enrolled")
+    return {"Create": "Bot"}
 
 
 @app.websocket_route("/ws")
 async def websocket(websocket: WebSocket):
-    bot = TestBot('btcusdt', 100)
-    bot.run()
     await websocket.accept()
     while True:
         sleep(1)
-        await websocket.send_json({"msg": bot.roe})
+        ret = []
+        for bot in market.enrolled_bots:
+            ret.append(bot.roe)
+        await websocket.send_json({"roes": ret})
 
 
 def test_websocket():
